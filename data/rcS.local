@@ -1,0 +1,4 @@
+#!/bin/sh
+
+rm -rf /opt/victronenergy/pzem
+cp -R /data/pzem /opt/victronenergy/pzem

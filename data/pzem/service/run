@@ -1,0 +1,4 @@
+#!/bin/sh
+exec 2>&1
+exec softlimit -d 100000000 -s 1000000 -a 100000000 /opt/victronenergy/pzem/pzem-dbus.py -d /dev/TTY PRODUCT
+
