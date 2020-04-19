@@ -956,8 +956,11 @@ def _analyzefieldoffsets(itemdescription):
         fts = FieldType.getsize(f.fieldtype)
         for pos in range(0, id_.itemstruct.size - fts + 1):
             magic = FieldType.getmagicvalue(f.fieldtype)
+            #print("pack0: %s magic=%s" % (repr(buffer_), repr(magic)))
             struct.pack_into(f.formatchar, buffer_, pos, magic)
+            #print("pack1: %s" % repr(buffer_))
             testitem = id_.itemstruct.unpack(buffer_)
+            #print("pack2: %s" % repr(testitem))
             struct.pack_into(f.formatchar, buffer_, pos, 0)  # reset buffer
             if testitem[f.index] == magic:
                 f.offset = pos
@@ -973,7 +976,7 @@ class FieldType:
     _typeNames = [None, "Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64", "Float", "Double"]
     _typesizes = [1, 2, 4, 8, 1, 2, 4, 8, 4, 8]
     _formatCharacters = ["b", "h", "i", "q", "B", "H", "I", "Q", "f", "d"]
-    _magicValues = [0, 0x71, 0x7172, 0x71727374, 0x7172737475767778, 0xa1, 0xa1a2, 0xa1a2a3a4, 0xa1a2a3a4a5a6a7a8, 1.01, 3.07]
+    _magicValues = [0, 0x71, 0x7172, 0x71727374, 0x7172737475767778, 0xa1, 0xa1a2, 0xa1a2a3a4, 0xa1a2a3a4a5a6a7a8, 0.5, 0.125]
 
     @staticmethod
     def getsize(fieldtype):
@@ -1111,6 +1114,7 @@ class _ItemSectionFormatter:
         w.writeint32(len(id_.fields))
         for f in id_.fields:
             w.writeint32(f.fieldtype)
+            if f.offset == None: raise Exception('f.offset is None for f=%s' % repr(f))
             w.writeint32(f.offset)
             w.writetext(f.name)
 

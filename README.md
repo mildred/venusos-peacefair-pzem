@@ -13,6 +13,13 @@ Secondary use case is to make use of the DC meter to monitor additional DC
 battery chargers on the system, such as a wind turbine charger. This part is not
 yet fully done.
 
+TODO
+----
+
+- finish pzem service calculation MockMultiplus and put in separate service
+- finish service to save energy timeseries
+- service to display enery timeseries
+
 Architecture
 ------------
 
@@ -127,6 +134,11 @@ Resources
     - com.victronenergy.battery
     - com.victronenergy.vebus
 - Get permission on tty for devloppment: `sudo setfacl -R -m u:$USER:rwx /dev/ttyUSB*`
+- Nim: https://nim-lang.org/
+- javascript charts: http://gionkunz.github.io/chartist-js
+- timeseries logging:
+    - http://discretelogics.com/doc/teafiles.py/teafiles.html
+    - https://github.com/unicredit/nim-teafiles
 
 Requirements
 ------------
@@ -134,3 +146,4 @@ Requirements
 - Python 2.7
 - pyserial (pip2 install pyserial==3.4)
 - pymodbus (pip2 install pymodbus==1.3.2)
+- BMV-700 firmware at least 3.08: *Fixed issue with Charged/Discharged Energy & Cumulative Ah (aka Total Ah Drawn) counters: the counters could get stuck at a certain value and become 'insensitive' for (small) changes*
