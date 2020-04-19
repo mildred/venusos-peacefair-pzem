@@ -9,6 +9,7 @@ to the dummy data via the dbus. See example.
 https://github.com/victronenergy/dbus_vebus_to_pvinverter/tree/master/test
 """
 import gobject
+from gobject import idle_add
 import platform
 import argparse
 import logging
@@ -23,7 +24,7 @@ import time
 
 # our own packages
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext/velib_python'))
-from vedbus import VeDbusService
+from vedbus import VeDbusService, VeDbusItemImport
 
 softwareVersion = '0.1'
 
@@ -200,6 +201,157 @@ class DbusPzemGridMeterService:
         elif os.path.basename(path) == "Frequency":   return ("%.1FHz" % (float(value)))
         else: return ("%.0F" % (float(value)))
 
+class DbusPzem016Service:
+    def __init__(self, devname, address):
+        bus = (dbus.SessionBus(private=True) if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus(private=True))
+        self._dbusname = "fr.mildred.pzemvictron2020.pzem016.%s-%d" % (devname, address)
+        self._dbusservice = VeDbusService(self._dbusname, bus=bus)
+        self._error_message = ""
+        self._disconnect = 0
+
+        # Create the management objects, as specified in the ccgx dbus-api document
+        self._dbusservice.add_path('/Mgmt/ProcessName', __file__)
+        self._dbusservice.add_path('/Mgmt/ProcessVersion', softwareVersion)
+        self._dbusservice.add_path('/Mgmt/Connection', "Device %d on Modbus-RTU %s" % (address, devname))
+
+        # Create the mandatory objects
+        self._dbusservice.add_path('/DeviceInstance', address)
+        self._dbusservice.add_path('/ProductId', address)
+        self._dbusservice.add_path('/ProductName', "PZEM-016")
+        self._dbusservice.add_path('/FirmwareVersion', 0)
+        self._dbusservice.add_path('/HardwareVersion', 0)
+        self._dbusservice.add_path('/Connected', 0)
+
+        # Readings
+        self._dbusservice.add_path('/Ac/Current', 0, gettextcallback=self._get_text)
+        self._dbusservice.add_path('/Ac/TotalEnergy', 0, gettextcallback=self._get_text)
+        self._dbusservice.add_path('/Ac/Power', 0, gettextcallback=self._get_text)
+        self._dbusservice.add_path('/Ac/Voltage', 0, gettextcallback=self._get_text)
+        self._dbusservice.add_path('/Ac/Frequency', 0, gettextcallback=self._get_text)
+        self._dbusservice.add_path('/Ac/PowerFactor', 0, gettextcallback=self._get_text)
+        self._dbusservice.add_path('/DeviceType', "PZEM-016")
+        self._dbusservice.add_path('/ErrorCode', 0, gettextcallback=self._get_text)
+        self._dbusservice.add_path('/ErrorMessage', "")
+
+    def update(self, instr):
+        try:
+            #print("Updating %s" % self._dbusname)
+            r = instr.readings()
+            self._dbusservice['/Ac/TotalEnergy']    = r['energy']
+            self._dbusservice['/Ac/Power']          = r['power']
+            self._dbusservice['/Ac/Current']        = r['current']
+            self._dbusservice['/Ac/Voltage']        = r['voltage']
+            self._dbusservice['/Ac/Frequency']      = r['frequency']
+            self._dbusservice['/Ac/PowerFactor']    = r['pow_factor']
+            self._dbusservice['/ErrorCode']         = 0
+            self._dbusservice['/ErrorMessage']      = ""
+            self._dbusservice['/Connected']         = 1
+            self._error_message = ""
+        except Exception as e:
+            #print("%s error: %s" % (self._dbusname, e))
+            self._dbusservice['/ErrorCode']         = 1
+            self._dbusservice['/ErrorMessage']      = str(e)
+            if self._disconnect > 60:
+                self._dbusservice['/Connected']     = 0
+            self._disconnect += 1
+            self._error_message = str(e)
+
+    def _get_text(self, path, value):
+        if path == "/ErrorCode": return self._error_message
+        elif os.path.basename(path) == "TotalEnergy": return ("%.3FkWh" % (float(value) / 1000.0))
+        elif os.path.basename(path) == "Power":       return ("%.1FW" % (float(value)))
+        elif os.path.basename(path) == "Current":     return ("%.3FA" % (float(value)))
+        elif os.path.basename(path) == "Voltage":     return ("%.1FV" % (float(value)))
+        elif os.path.basename(path) == "PowerFactor": return ("%.2F" % (float(value)))
+        elif os.path.basename(path) == "Frequency":   return ("%.1FHz" % (float(value)))
+        else: return ("%.0F" % (float(value)))
+
+class DbusMockMultiplusService:
+    def __init__(self, devname, address):
+        self.imported = {}
+        self.bus = (dbus.SessionBus(private=True) if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus(private=True))
+        self._dbusservice = VeDbusService("com.victronenergy.vebus.mock-multiplus-%s-%s" % (devname, address), bus=self.bus)
+        self.bus.add_signal_receiver(self.dbus_name_owner_changed, signal_name='NameOwnerChanged')
+
+        logging.info('Searching dbus for vebus devices...')
+        for serviceName in self.bus.list_names():
+            self.scan_dbus_service(serviceName)
+        logging.info('Finished search for vebus devices')
+
+        self._error_message = ""
+        self._disconnect = 0
+
+        # Create the management objects, as specified in the ccgx dbus-api document
+        self._dbusservice.add_path('/Mgmt/ProcessName', __file__)
+        self._dbusservice.add_path('/Mgmt/ProcessVersion', softwareVersion)
+        self._dbusservice.add_path('/Mgmt/Connection', "Mock-Multiplus spawned by %s" % (devname,))
+
+        # Create the mandatory objects
+        self._dbusservice.add_path('/DeviceInstance', address)
+        self._dbusservice.add_path('/ProductId', address)
+        self._dbusservice.add_path('/ProductName', "MockMultiplus")
+        self._dbusservice.add_path('/FirmwareVersion', 0)
+        self._dbusservice.add_path('/HardwareVersion', 0)
+        self._dbusservice.add_path('/Connected', 0)
+
+        # Readings
+        self._dbusservice.add_path('/Energy/InverterToAcOut', 0, gettextcallback=self._get_text)
+        self._dbusservice.add_path('/DeviceType', "MockMultiplus")
+        self._dbusservice.add_path('/ErrorCode', 0, gettextcallback=self._get_text)
+        self._dbusservice.add_path('/ErrorMessage', "")
+
+    def update(self, _instr):
+        try:
+            pass
+        except Exception as e:
+            self._dbusservice['/ErrorCode']         = 1
+            self._dbusservice['/ErrorMessage']      = str(e)
+            if self._disconnect > 60:
+                self._dbusservice['/Connected']     = 0
+            self._disconnect += 1
+            self._error_message = str(e)
+
+    def _get_text(self, path, value):
+        if path == "/ErrorCode": return self._error_message
+        elif path.startswith("/Energy/"): return ("%.3FkWh" % (float(value) / 1000.0))
+        else: return ("%.0F" % (float(value)))
+
+    def dbus_name_owner_changed(self, name, oldOwner, newOwner):
+        # decouple, and process in main loop
+        idle_add(self.process_name_owner_changed, name, oldOwner, newOwner)
+
+    def process_name_owner_changed(self, name, oldOwner, newOwner):
+        logging.debug('D-Bus name owner changed. Name: %s, oldOwner: %s, newOwner: %s' % (name, oldOwner, newOwner))
+
+        if newOwner != '':
+            self.scan_dbus_service(name)
+        else:
+            pass # Would remove imported service/path
+
+    def is_service_pzem016(self, serviceName):
+        return serviceName.split('.')[0:4] == ['fr', 'mildred', 'pzemvictron2020', 'pzem016']
+
+    def is_service_battery(self, serviceName):
+        return serviceName.split('.')[0:3] == ['com', 'victronenergy', 'battery']
+
+    def scan_dbus_service(self, serviceName):
+        if self.is_service_battery(serviceName):
+            self.import_value(serviceName, '/History/DischargedEnergy')
+            #self.import_value(serviceName, '/TimeToGo')
+
+    def import_value(self, serviceName, path):
+        if serviceName not in self.imported: self.imported[serviceName] = {}
+        if path in self.imported[serviceName]: return
+        self.imported[serviceName][path] = VeDbusItemImport(self.bus, serviceName, path, self.import_value_changed)
+
+    def import_value_changed(self, serviceName, path, changes):
+        if self.is_service_battery(serviceName):
+            #if path == '/TimeToGo':
+            #    print("%s%s = %s" % (serviceName, path, changes['Value']))
+            if path == '/History/DischargedEnergy':
+                self._dbusservice['/Energy/InverterToAcOut'] = changes['Value']
+
+
 class DbusPzemService:
     def __init__(self, tty, devices):
         self._services = {}
@@ -216,8 +368,14 @@ class DbusPzemService:
             elif devices[addr] == 'inverter':
                 self._services[addr] = DbusPzemInverterService(devname, addr)
                 self._instruments[addr] = pzem.Instrument(tty, addr, 'ac')
+            elif devices[addr] == 'pzem-016':
+                self._services[addr] = DbusPzem016Service(devname, addr)
+                self._instruments[addr] = pzem.Instrument(tty, addr, 'ac')
+            elif devices[addr] == 'mock-multiplus':
+                self._services[addr] = DbusMockMultiplusService(devname, addr)
+                self._instruments[addr] = None
             else:
-                raise "Unknown device type %s" % devices[addr]
+                raise Exception("Unknown device type %s" % devices[addr])
 
         gobject.timeout_add(1000, self._update)
 
@@ -263,8 +421,9 @@ def main():
     DbusPzemService(
         tty=opts.device,
         devices={
-            10: "inverter0",
-            20: "inverter",
+            #10: "pzem-016",
+            20: "pzem-016",
+            'MultiPlus': "mock-multiplus"
         })
 
     logging.info("Starting mainloop, responding only on events")
